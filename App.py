@@ -1,63 +1,49 @@
 import streamlit as st
 import pdfplumber
 import pandas as pd
-import re
 
 st.set_page_config(page_title="KCET PDF to CSV", layout="centered")
 
-st.title("📄 KCET PDF → CSV Converter")
-st.write("Upload KCET allotment PDF to extract colleges, branches, CET codes.")
+st.title("📄 KCET PDF → CSV Converter (Improved)")
+st.write("Upload KCET PDF to extract structured table data")
 
 uploaded_file = st.file_uploader("Upload PDF", type=["pdf"])
 
-def extract_data_from_text(text):
-    data = []
+def extract_tables(pdf):
+    all_data = []
 
-    lines = text.split("\n")
+    for page in pdf.pages:
+        tables = page.extract_tables()
 
-    for line in lines:
-        # Example pattern (modify based on your PDF format)
-        match = re.search(r'(\d{4})\s+([A-Za-z &]+)\s+([A-Za-z &]+)\s+([A-Za-z]+)', line)
+        for table in tables:
+            for row in table:
+                if row and any(row):  # skip empty rows
+                    all_data.append(row)
 
-        if match:
-            cet_code = match.group(1)
-            college = match.group(2).strip()
-            branch = match.group(3).strip()
-            district = match.group(4).strip()
+    return all_data
 
-            data.append({
-                "CET Code": cet_code,
-                "College": college,
-                "Branch": branch,
-                "District": district
-            })
-
-    return pd.DataFrame(data)
 
 if uploaded_file is not None:
     with pdfplumber.open(uploaded_file) as pdf:
-        full_text = ""
+        table_data = extract_tables(pdf)
 
-        for page in pdf.pages:
-            text = page.extract_text()
-            if text:
-                full_text += text + "\n"
+    if table_data:
+        df = pd.DataFrame(table_data)
 
-    st.success("PDF Loaded Successfully!")
+        # Try to set first row as header (optional)
+        df.columns = df.iloc[0]
+        df = df[1:]
 
-    df = extract_data_from_text(full_text)
-
-    if not df.empty:
-        st.write("### Extracted Data")
+        st.success("✅ Table extracted successfully!")
         st.dataframe(df)
 
         csv = df.to_csv(index=False).encode("utf-8")
 
         st.download_button(
-            label="⬇️ Download CSV",
-            data=csv,
-            file_name="kcet_data.csv",
-            mime="text/csv"
+            "⬇️ Download CSV",
+            csv,
+            "kcet_data.csv",
+            "text/csv"
         )
     else:
-        st.error("No structured data found. Try adjusting regex.")
+        st.error("❌ No tables found in PDF")
